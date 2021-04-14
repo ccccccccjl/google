@@ -38,8 +38,8 @@ import (
 	"math/big"
 
 	"github.com/google/keytransparency/core/crypto/vrf"
-	//"github.com/google/trillian/crypto/keys"
-	"github.com/ccccccccjl/google/trillian/crypto/keys"
+	"github.com/google/trillian/crypto/keys"
+	//"github.com/ccccccccjl/google/trillian/crypto/keys"
 
 	"github.com/golang/protobuf/proto" //nolint:staticcheck
 )
