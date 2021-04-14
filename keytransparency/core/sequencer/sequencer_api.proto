@@ -1,0 +1,159 @@
+// Copyright 2018 Google Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+// Key Transparency Sequencer
+//
+// The Key Transparency Sequencer API supplies an api for applying mutations to the current
+// state of the map.
+package google.keytransparency.sequencer;
+
+option go_package = "github.com/google/keytransparency/core/sequencer/sequencer_go_proto";
+
+import "google/protobuf/empty.proto";
+
+message MapMetadata {
+  // SourceSlice is the range of inputs that have been included in a map
+  // revision.
+  message SourceSlice {
+    // lowest_inclusive is the lowest primary key (inclusive) of the source
+    // log that has been incorporated into this map revision. The primary
+    // keys of logged items MUST be monotonically increasing.
+    // Defined in terms of microseconds from the Unix epoch.
+    int64 lowest_inclusive = 1;
+    // highest_exclusive is the highest primary key (exclusive) of the source
+    // log that has been incorporated into this map revision. The primary keys
+    // of logged items MUST be monotonically increasing.
+    // Defined in terms of microseconds from the Unix epoch.
+    int64 highest_exclusive = 2;
+    // log_id is the ID of the source log.
+    int64 log_id = 3;
+  }
+  reserved 1;
+  // sources is a list of log sources that were used to construct this map revision.
+  repeated SourceSlice sources = 2;
+}
+
+// DefineRevisionsRequest contains information needed to define new revisions.
+message DefineRevisionsRequest {
+  // directory_id is the directory to examine the outstanding mutations for.
+  string directory_id = 1;
+  // min_batch is the minimum number of items in a batch.
+  // If less than min_batch items are available, nothing happens.
+  // TODO(#1047): Replace with timeout so items in the log get processed
+  // eventually.
+  int32 min_batch = 2;
+  // max_batch is the maximum number of items in a batch.
+  int32 max_batch = 3;
+  // max_unapplied is the maximum number of revisions that can be defined ahead
+  // of applied revisions.
+  int32 max_unapplied = 4;
+}
+
+// DefineRevisionsResponse contains information about defined/applied revisions.
+message DefineRevisionsResponse {
+  // highest_applied is the current map revision, which is also the highest map
+  // revision that has been applied.
+  int64 highest_applied = 2;
+  // highest_defined is the highest defined revision after this call.
+  int64 highest_defined = 3;
+
+  // Deprecated tags, do not reuse.
+  reserved 1;
+}
+
+// GetDefinedRevisionsRequest contains information needed to request the set of
+// defined/applied revisions.
+message GetDefinedRevisionsRequest {
+  // directory_id is the directory to examine the revisions for.
+  string directory_id = 1;
+}
+
+// GetDefinedRevisionResponse contains info about defined/applied revisions.
+message GetDefinedRevisionsResponse {
+  // highest_applied is the current map revision, which is also the highest map
+  // revision that has been applied.
+  int64 highest_applied = 1;
+  // highest_defined is the highest defined revision after this call.
+  int64 highest_defined = 2;
+}
+
+// ApplyRevisionsRequest triggers applying revisions to the directory's map.
+message ApplyRevisionsRequest {
+  // directory_id is the directory to apply revisions for.
+  string directory_id = 1;
+}
+
+// ApplyRevisionRequest contains information needed to create a new revision.
+message ApplyRevisionRequest {
+  // directory_id is the directory to apply the mutations to.
+  string directory_id = 1;
+  // revision is the expected revision of the new revision.
+  int64 revision = 2;
+}
+
+// ApplyRevisionResponse contains stats about the created revision.
+message ApplyRevisionResponse {
+  string directory_id = 1;
+  // The revision this is for.
+  int64 revision = 2;
+  // mutations processed.
+  int64 mutations = 3;
+  // map_leaves written.
+  int64 map_leaves = 4;
+}
+
+// PublishRevisionsRequest copies all available SignedMapRoots into the Log of SignedMapRoots.
+message PublishRevisionsRequest {
+  string directory_id = 1;
+  // block until a Signed Log Root has been published which encompases all map roots.
+  bool block = 2;
+}
+
+// PublishRevisionsResponse contains metrics about the publishing operation.
+message PublishRevisionsResponse {
+  // revisions published to the log of signed map roots.
+  repeated int64 revisions = 1;
+}
+
+message EstimateBacklogRequest {
+  string directory_id = 1;
+  int32 max_unapplied_count = 2;
+}
+
+message EstimateBacklogResponse {
+   string directory_id = 1;
+   int32 unapplied_count = 2;
+}
+
+// The KeyTransparency Sequencer API.
+service KeyTransparencySequencer {
+  // DefineRevisions returns the info on defined/applied revisions, after
+  // optionally defining a new revision of outstanding mutations.
+  rpc DefineRevisions(DefineRevisionsRequest) returns (DefineRevisionsResponse);
+  // GetDefinedRevisions returns the range of defined and unapplied revisions.
+  rpc GetDefinedRevisions(GetDefinedRevisionsRequest) returns (GetDefinedRevisionsResponse);
+  // ApplyRevisions figures out the outstanding revisions, and applies the
+  // corresponding mutations the to the map.
+  rpc ApplyRevisions(ApplyRevisionsRequest) returns (google.protobuf.Empty);
+  // ApplyRevision applies the mutations for the supplied revision.
+  // If the revision does not exist, this must return `NotFound`.
+  rpc ApplyRevision(ApplyRevisionRequest) returns (ApplyRevisionResponse);
+  // PublishRevisions copies the MapRoots of all known map revisions into the Log
+  // of MapRoots.
+  rpc PublishRevisions(PublishRevisionsRequest) returns (PublishRevisionsResponse);
+  // EstimateBacklog will update various counters on the server. Call periodically.
+  rpc EstimateBacklog(EstimateBacklogRequest) returns (EstimateBacklogResponse);
+}

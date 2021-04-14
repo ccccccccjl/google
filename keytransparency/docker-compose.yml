@@ -1,0 +1,163 @@
+version: "3.2"
+secrets:
+  server.key:
+    file: ./genfiles/key.pem
+  server.crt:
+    file: ./genfiles/cert.pem
+  monitor.key:
+    file: ./genfiles/monitor_sign-key.pem
+
+volumes:
+    prometheus_data:
+      driver_opts:
+        type: tmpfs
+        device: tmpfs
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.11.0
+    volumes:
+      - ./deploy/prometheus/:/etc/prometheus/
+      - prometheus_data:/data/
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/data'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    ports:
+      - 9090:9090
+  db:
+    # TODO(gbelvin): Select a better tag for Trillian
+    image: gcr.io/trillian-opensource-ci/db_server:latest
+    ports:
+      - "3306"
+    environment:
+      MYSQL_PASSWORD: zaphod
+      MYSQL_USER: test
+      MYSQL_DATABASE: test
+
+  log-server:
+    depends_on:
+      - db
+    # TODO(gbelvin): Select a better tag for Trillian
+    image: gcr.io/trillian-opensource-ci/log_server:latest
+    command: 
+      - --mysql_uri=test:zaphod@tcp(db:3306)/test
+      - --rpc_endpoint=0.0.0.0:8090
+      - --http_endpoint=0.0.0.0:8091
+      - --alsologtostderr
+    ports:
+      - "8090"
+      - "8091"
+
+  log-signer:
+    depends_on:
+      - db
+    # TODO(gbelvin): Select a better tag for Trillian
+    image: gcr.io/trillian-opensource-ci/log_signer:latest
+    command:
+      - --mysql_uri=test:zaphod@tcp(db:3306)/test
+      - --http_endpoint=0.0.0.0:8091
+      - --sequencer_guard_window=0s
+      - --sequencer_interval=1s
+      - --num_sequencers=1
+      - --batch_size=50
+      - --force_master=true
+      - --alsologtostderr
+    ports:
+      - "8091"
+
+  map-server:
+    depends_on:
+      - db
+    # TODO(gbelvin): Select a better tag for Trillian
+    image: gcr.io/trillian-opensource-ci/map_server:latest
+    command:
+      - --mysql_uri=test:zaphod@tcp(db:3306)/test
+      - --rpc_endpoint=0.0.0.0:8090
+      - --http_endpoint=0.0.0.0:8091
+      - --alsologtostderr
+    ports:
+      - "8090"
+      - "8091"
+
+  server:
+    depends_on:
+      - db
+      - log-server
+      - map-server
+    image: gcr.io/key-transparency/keytransparency-server:${TRAVIS_COMMIT}
+    ports:
+      - "443:8080" # json & grpc
+      - "8081:8081" # metrics
+    command:
+      - --addr=0.0.0.0:8080
+      - --db=test:zaphod@tcp(db:3306)/test
+      - --log-url=log-server:8090
+      - --map-url=map-server:8090
+      - --tls-key=/run/secrets/server.key
+      - --tls-cert=/run/secrets/server.crt
+      - --auth-type=insecure-fake
+      - --alsologtostderr
+      - --v=1
+    labels:
+      kompose.service.type: LoadBalancer
+    secrets:
+      - server.key
+      - server.crt
+
+  sequencer:
+    depends_on:
+      - db
+      - log-server
+      - map-server
+    image: gcr.io/key-transparency/keytransparency-sequencer:${TRAVIS_COMMIT}
+    command:
+      - --force_master
+      - --db=test:zaphod@tcp(db:3306)/test
+      - --addr=0.0.0.0:8080
+      - --log-url=log-server:8090
+      - --map-url=map-server:8090
+      - --tls-key=/run/secrets/server.key
+      - --tls-cert=/run/secrets/server.crt
+      - --alsologtostderr
+      - --v=5
+    ports:
+      - "8080"
+      - "8081"
+    secrets:
+      - server.key
+      - server.crt
+    networks:
+      - attachable
+      - default
+
+  monitor:
+    depends_on:
+      - server
+      - sequencer
+    image: gcr.io/key-transparency/keytransparency-monitor:${TRAVIS_COMMIT}
+    command:
+      - --addr=0.0.0.0:8070
+      - --metrics-addr=0.0.0.0:8071
+      - --kt-url=server:8080
+      - --insecure
+      - --directoryid=default
+      - --tls-key=/run/secrets/server.key
+      - --tls-cert=/run/secrets/server.crt
+      - --sign-key=/run/secrets/monitor.key
+      - --password=towel
+      - --alsologtostderr
+      - --v=3
+    ports:
+    - "8070:8070" # gRPC / HTTPS
+    - "8071:8071" # HTTP metrics
+    secrets:
+      - server.key
+      - server.crt
+      - monitor.key
+
+networks:
+  attachable:
+    driver: overlay
+    attachable: true

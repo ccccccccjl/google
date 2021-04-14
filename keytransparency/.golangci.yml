@@ -1,0 +1,56 @@
+service:
+  golangci-lint-version: 1.19.x
+
+run:
+  timeout: 5m
+
+linters-settings:
+  govet:
+    check-shadowing: false
+  golint:
+    min-confidence: 0.2
+  gocyclo:
+    min-complexity: 18
+  dupl:
+    threshold: 100
+  goconst:
+    min-len: 2
+    min-occurrences: 3
+  misspell:
+    locale: US
+  depguard:
+    list-type: blacklist
+    packages:
+      - golang.org/x/net/context
+      - github.com/gogo/protobuf/proto
+      - github.com/google/martian/log
+
+linters:
+  enable: 
+     - deadcode
+     - depguard
+     - dogsled
+     - dupl
+     - errcheck
+     - goconst
+     - gocritic
+     - gocyclo
+     - gofmt
+     - goimports
+     - golint
+     - gosec
+     - ineffassign
+     - misspell
+     - nakedret
+     - prealloc
+     - structcheck
+     - typecheck
+     - unconvert
+     - unparam
+     - unused
+     - varcheck
+     - whitespace
+
+issues:
+  exclude:
+    - .(.*Write|.*Serve).
